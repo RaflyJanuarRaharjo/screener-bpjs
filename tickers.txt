@@ -1,0 +1,11 @@
+# Satu kode saham per baris (tanpa .JK)
+GOTO
+BUMI
+DEWA
+BRMS
+ENRG
+KIJA
+BKSL
+WIKA
+PPRE
+ELSA
