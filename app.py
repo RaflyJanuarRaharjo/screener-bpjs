@@ -3,8 +3,10 @@ Screener BPJS (Beli Pagi Jual Sore) untuk saham IDX harga kecil.
 Jalankan sore/malam setelah market tutup -> kandidat untuk dibeli besok pagi.
 Data: Yahoo Finance via yfinance (end-of-day, bisa delay).
 
-Tinggal pencet tombol "Mulai Screening" -> keluar list saham berpotensi
-scalping lengkap dengan rekomendasi harga Buy, Sell (TP), dan Stop Loss.
+Tinggal pencet tombol "Mulai Screening" -> otomatis scan seluruh saham IDX
+(papan Utama/Pengembangan/Akselerasi/Ekonomi Baru) -> keluar list saham
+berpotensi scalping lengkap dengan rekomendasi harga Buy, Sell (TP), dan
+Stop Loss.
 """
 from pathlib import Path
 
@@ -13,11 +15,6 @@ import streamlit as st
 import yfinance as yf
 
 st.set_page_config(page_title="Screener BPJS", layout="wide")
-
-DEFAULT_TICKERS = [
-    "GOTO", "BUMI", "DEWA", "BRMS", "ENRG", "KIJA", "BKSL", "WIKA",
-    "PPRE", "ELSA", "DOID", "ADHI", "PTPP", "BUKA", "SRTG", "INET",
-]
 
 # ---------------- Kriteria & parameter scalping (fixed, tidak perlu diatur) ----------------
 PRICE_MIN, PRICE_MAX = 50, 1000          # saham harga kecil
@@ -31,15 +28,14 @@ SL_MIN_PCT, SL_MAX_PCT = 1.5, 5.0         # batas stop loss (%)
 RR_RATIO = 2.0                            # target profit = SL x rasio ini (risk:reward 1:2)
 TP_MAX_PCT = 10.0                         # batas atas target profit (%)
 
+CHUNK_SIZE = 60                           # jumlah ticker per batch request ke Yahoo Finance
+TOP_N_DISPLAY = 50                        # batas baris yang ditampilkan di tabel utama
 
-def load_tickers():
-    f = Path(__file__).parent / "tickers.txt"
-    if f.exists():
-        items = [l.strip().upper() for l in f.read_text().splitlines()]
-        items = [t for t in items if t and not t.startswith("#")]
-        if items:
-            return items
-    return DEFAULT_TICKERS
+
+def load_universe() -> list[str]:
+    f = Path(__file__).parent / "idx_tickers.csv"
+    df = pd.read_csv(f)
+    return df["code"].tolist()
 
 
 def tick_size(price: float) -> int:
@@ -64,13 +60,29 @@ def round_tick(price: float, mode: str = "nearest") -> int:
     return int(round(price / t)) * t
 
 
-@st.cache_data(ttl=900, show_spinner="Mengambil data dari Yahoo Finance...")
-def download(tickers: tuple, period: str = "3mo") -> pd.DataFrame:
-    symbols = [t + ".JK" for t in tickers]
+@st.cache_data(ttl=1800, show_spinner=False)
+def download_chunk(symbols: tuple, period: str = "3mo") -> pd.DataFrame:
     return yf.download(
-        symbols, period=period, interval="1d", group_by="ticker",
+        list(symbols), period=period, interval="1d", group_by="ticker",
         auto_adjust=False, threads=True, progress=False,
     )
+
+
+def download_all(tickers: list, period: str = "3mo") -> pd.DataFrame:
+    symbols = [t + ".JK" for t in tickers]
+    chunks = [symbols[i:i + CHUNK_SIZE] for i in range(0, len(symbols), CHUNK_SIZE)]
+    frames = []
+    progress = st.progress(0.0, text=f"Mengambil data 0/{len(chunks)} batch...")
+    for i, chunk in enumerate(chunks):
+        try:
+            frames.append(download_chunk(tuple(chunk), period))
+        except Exception:
+            pass  # lewati batch yang gagal (mis. rate-limit), lanjut ke batch berikutnya
+        progress.progress((i + 1) / len(chunks), text=f"Mengambil data {i + 1}/{len(chunks)} batch...")
+    progress.empty()
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, axis=1)
 
 
 def get_one(df: pd.DataFrame, sym: str) -> pd.DataFrame | None:
@@ -148,7 +160,7 @@ st.caption(
     "investasi, gunakan sebagai referensi pantauan saja."
 )
 
-tickers = load_tickers()
+tickers = load_universe()
 
 c1, c2 = st.columns([1, 2])
 with c1:
@@ -159,13 +171,17 @@ with c2:
         min_value=0, step=500_000, value=0,
     )
 
-st.caption(f"Memindai **{len(tickers)}** saham (edit `tickers.txt` untuk menambah).")
+st.caption(
+    f"Auto-scan **{len(tickers)}** saham di BEI (papan Utama/Pengembangan/Akselerasi/"
+    "Ekonomi Baru — papan Pemantauan Khusus dikecualikan karena mekanisme lelangnya "
+    "tidak cocok untuk scalping). Proses bisa makan waktu beberapa menit."
+)
 
 if "hasil" not in st.session_state:
     st.session_state.hasil = None
 
 if run:
-    raw = download(tuple(tickers))
+    raw = download_all(tickers)
     st.session_state.raw = raw
     st.session_state.hasil = compute(raw, tickers)
 
@@ -175,25 +191,24 @@ if st.session_state.hasil is None:
 
 res = st.session_state.hasil
 if res.empty:
-    st.error("Data tidak didapat. Cek koneksi internet atau kode saham di tickers.txt.")
+    st.error("Data tidak didapat dari Yahoo Finance. Coba klik Mulai Screening lagi (kemungkinan rate-limit sementara).")
     st.stop()
 
 n_lolos = int(res["Lolos"].sum())
 
-hasil = res.sort_values(["Lolos", "Skor"], ascending=[False, False]).copy()
-hasil["Status"] = hasil["Lolos"].map({True: "✅ Lolos", False: "⏳ Pantau"})
-hasil = hasil.drop(columns=["Lolos"])
+hasil_full = res.sort_values(["Lolos", "Skor"], ascending=[False, False]).copy()
+hasil_full["Status"] = hasil_full["Lolos"].map({True: "✅ Lolos", False: "⏳ Pantau"})
+hasil_full = hasil_full.drop(columns=["Lolos"])
+hasil = hasil_full.head(TOP_N_DISPLAY).copy()
 
 if modal > 0:
     hasil["Lot (100 lbr)"] = (modal // (hasil["Buy"] * 100)).astype(int)
 
-st.subheader(f"Hasil screening: {n_lolos} lolos kriteria, {len(hasil)} saham dipindai")
-if n_lolos == 0:
-    st.caption(
-        "Belum ada yang memenuhi semua kriteria hari ini — tabel di bawah tetap "
-        "menampilkan semua saham diurutkan dari yang paling berpotensi (Skor tertinggi), "
-        "tandai **⏳ Pantau** untuk dipantau lebih lanjut."
-    )
+st.subheader(f"Hasil screening: {n_lolos} lolos kriteria, {len(res)} saham berhasil dipindai")
+st.caption(
+    f"Menampilkan top {len(hasil)} saham diurutkan dari yang paling berpotensi (Skor tertinggi). "
+    "Tandai **⏳ Pantau** = belum memenuhi semua kriteria tapi masih layak dipantau."
+)
 
 fmt = {
     "Close": "{:,.0f}", "Chg %": "{:+.2f}", "Vol/Avg20": "{:.2f}x",
