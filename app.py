@@ -232,6 +232,25 @@ mode = MODES[mode_key]
 
 st.caption(f"**{mode['label']}** — {mode['subtitle']} · Target hold: **{mode['horizon']}**")
 
+with st.expander("📖 Panduan cara pakai tiap mode (klik untuk buka)"):
+    st.markdown(
+        "| Mode | Kapan Screening | Cara Entry | Cara Exit / Pantau | Tips Efisiensi |\n"
+        "|---|---|---|---|---|\n"
+        "| 🔥 **Scalping** | Sore/malam setelah close, sekali sehari | Besok pagi 09:00-09:30 di harga **Buy** (atau nego 1-2 tick di bawahnya) | Pasang TP & SL begitu posisi kena. Sampai sesi 2 siang belum kena TP/SL → jual di harga pasar, jangan nginep | Fokus 2-3 saham/hari saja, prioritaskan yang Vol/Avg20 > 2x |\n"
+        "| ⚡ **Day Trade** | 2-3x seminggu setelah close (mis. Senin/Rabu/Jumat) | Dalam 1-2 hari ke depan di sekitar harga **Buy** | Cek posisi 1x sore. Kalau mendekati TP, geser SL ke harga beli (trailing). Hari ke-5 belum kena TP/SL → exit di harga pasar | Pilih yang Chg % masih landai tapi Vol/Avg20 mulai naik (momentum baru mulai) |\n"
+        "| 📈 **Swing** | 1x seminggu (akhir/awal pekan), tidak perlu tiap hari | Scaling in: ~50% dulu di harga **Buy**, sisanya kalau breakout lanjut dengan volume | Pantau cukup 1x/hari. Re-screening tiap minggu — kalau saham hilang dari daftar Lolos, pertimbangkan take profit partial | Prioritaskan **Avg Value20** terbesar (paling likuid, aman untuk hold lebih lama) |\n"
+    )
+    st.markdown(
+        "**Tips lintas-mode:**\n"
+        "- Jangan pakai 3 mode sekaligus untuk saham yang sama di waktu bersamaan — pilih satu horizon per posisi.\n"
+        "- Kombinasi: pakai hasil **Swing** sebagai watchlist tren naik mingguan, lalu cek tiap hari apakah salah satu "
+        "sahamnya juga muncul di hasil **Scalping/Day Trade** — itu sinyal kuat (tren besar + momentum pendek align).\n"
+        f"- Fee broker ~{FEE_TOTAL_PCT:.2f}% belum dipotong dari kolom Potensi Profit %, lumayan menggerus profit kecil "
+        "(terutama mode Scalping) — realistiskan ekspektasi net profit.\n"
+        "- Jangan all-in di 1 saham — sebar ke beberapa kandidat teratas biar 1 SL kena tidak menghabiskan modal.\n"
+        "- Status **⏳ Pantau** bukan sinyal beli, itu cuma watchlist dari yang belum lolos semua syarat."
+    )
+
 tickers = load_universe()
 
 c1, c2 = st.columns([1, 2])
